@@ -4,17 +4,15 @@
 Reservoir simulation, being a state-of-the-art tool for reservoir performance prediction, is an essential part of the petroleum engineering undergraduate and post-graduate curricula. While the science of reservoir simulation (governing models and solutions) is considered well-taught in academic programs, companies train their reservoir engineering staff on the art of using a simulation software. However, not much teaching attention has been given to the coding of the governing models and solutions to make the softwares. Yet, the coding is unarguably the link between the science and the art.  Regrettably, this missing link has made reservoir simulation appear like a black-box to students. This project therefore sets out to unbox reservoir simulation by presenting an interactive Python script that completely implements the workflow of a simple 3D single-phase oil reservoir simulator. The Python script contains code chunks, explanatory texts and visual objects.
   
 #### Project Outline
-1.	Reservoir Simulator Workflow - presentation of major workflow steps
-
-2.	Input Data File
-●	Data preparation with the .csv template
-●	Data importation from .csv into Python as DataFrame
-●	DataFrame formatting
-
-3.	Reservoir Discretization and Visualization
-●	Computation of gridblock dimensions
-●	Generation of gridblock ordering data
-●	3D visualization of discretized model
+1	Reservoir Simulator Workflow - presentation of major workflow steps
+2	Input Data File
+ ●	Data preparation with the .csv template
+ ●	Data importation from .csv into Python as DataFrame
+ ●	DataFrame formatting
+3	Reservoir Discretization and Visualization
+ ●	Computation of gridblock dimensions
+ ●	Generation of gridblock ordering data
+ ●	3D visualization of discretized model
 ●	Gridblock categorization
 ⮚	Stating the need for categorization
 ⮚	Establishing the basis of categorization
