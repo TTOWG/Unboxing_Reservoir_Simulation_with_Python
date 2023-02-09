@@ -39,8 +39,8 @@ Reservoir simulation, being a state-of-the-art tool for reservoir performance pr
  +	Loop flowchart
  +	Indices of the current block
  +	Indices of the neighbouring blocks:
-  i	Formulating the algorithm
- ii	Scripting the function
+  -	Formulating the algorithm
+  -	Scripting the function
  +	Implementation of boundary condition
  + The Coefficient matrix
  +	Well-blocks identification and modelling
