@@ -7,7 +7,6 @@ Reservoir simulation, being a state-of-the-art tool for reservoir performance pr
 1	Reservoir Simulator Workflow - presentation of major workflow steps
    
 2	Input Data File
-   
  +	Data preparation with the .csv template
  +	Data importation from .csv into Python as DataFrame
  +	DataFrame formatting
