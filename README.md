@@ -47,13 +47,13 @@ Reservoir simulation, being a state-of-the-art tool for reservoir performance pr
  +	The RHS vector
  +	Block pressures matrix
      
-6.	Volumetric Computations
-●	The MBE model
-●	Computation flowchart
-●	PVT Updating
-●	Performance prediction
+6 Volumetric Computations
+ +	The MBE model
+ + Computation flowchart
+ +	PVT Updating
+ +	Performance prediction
 
-7.	Loop termination mechanism
+7	Loop termination mechanism
 
-8.	Output Aggregation and Export
+8	Output Aggregation and Export
   
