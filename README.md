@@ -10,41 +10,43 @@ Reservoir simulation, being a state-of-the-art tool for reservoir performance pr
  +	Data preparation with the .csv template
  +	Data importation from .csv into Python as DataFrame
  +	DataFrame formatting
+   
 3	Reservoir Discretization and Visualization
- ●	Computation of gridblock dimensions
- ●	Generation of gridblock ordering data
- ●	3D visualization of discretized model
-●	Gridblock categorization
-⮚	Stating the need for categorization
-⮚	Establishing the basis of categorization
-⮚	Scripting categorization functions
-●	Visualization of gridblock categories
-⮚	Static color-coded graphics using matplotlib
-⮚	Dynamic interactive plots – using plotly
+ +	Computation of gridblock dimensions
+ +	Generation of gridblock ordering data
+ +	3D visualization of discretized model using matplotlib
+ +	Gridblock categorization
+  -	Stating the need for categorization
+  -	Establishing the basis of categorization
+  -	Formulating the categorization algorithm
+  -	Scripting categorization functions
+ +	Visualization of gridblock categories
+  -	Static color-coded graphics using matplotlib
+  -	Dynamic interactive plots – using plotly
+     
+4	Simulation Parameter Computations
+ +	Gridblock cross-sectional area, in x, y, z directions
+ +	Gridblock bulk volume, in ft3 and bbl.
+ +	Reservoir STOIIP
+ +	Gridblock STOIIP
+ +	Effective compressibility
+ +	Inter-block flow transmissibilities, in x, y, z directions
+ +	Setting flow model coefficients
 
-4.	Simulation Parameter Computations
-●	Gridblock cross-sectional area, in x, y, z directions
-●	Gridblock bulk volume, in ft3 and bbl.
-●	Reservoir STOIIP
-●	Gridblock STOIIP
-●	Effective compressibility
-●	Inter-block flow transmissibilities, in x, y, z directions
-●	Setting flow model coefficients
-
-5.	Gridblock-Level Modelling
-●	Simulation loops through the discretized model: variables and counters
-●	Programmatically-convenient presentation of the governing equation
-●	Loop flowchart
-●	Indices of the current block
-●	Indices of the neighbouring blocks:
-i.	Formulating the algorithm
-ii.	Scripting the function
-●	Implementation of boundary condition
-●	The Coefficient matrix
-●	Well-blocks identification and modelling
-●	The RHS vector
-●	Block pressures matrix
-
+5	Gridblock-Level Modelling
+ +	Simulation loops through the discretized model: variables and counters
+ +	Programmatically-convenient presentation of the governing equation
+ +	Loop flowchart
+ +	Indices of the current block
+ +	Indices of the neighbouring blocks:
+  i	Formulating the algorithm
+ ii	Scripting the function
+ +	Implementation of boundary condition
+ + The Coefficient matrix
+ +	Well-blocks identification and modelling
+ +	The RHS vector
+ +	Block pressures matrix
+     
 6.	Volumetric Computations
 ●	The MBE model
 ●	Computation flowchart
