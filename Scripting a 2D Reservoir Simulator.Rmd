@@ -1,0 +1,752 @@
+---
+title: "Scripting a 2D Reservoir Simulator"
+author: "TTOWG"
+date: "6/23/2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+```
+TTOWG - To The Only Wise God be Glory!!!
+
+## Introduction
+This script produces the 2-D simulated performance parameters of a reservoir whose rock and fluid properties and well parameters are supplied in the input DataDeck. The elements of DataDeck are imported from the accompanying Microsoft Excel spreadsheet file (2-D Reservoir Simulator DataDeck Template.xlsx) which must be in the same directory with the script. At the end of the simulation, the script presents reservoir performance parameters (average reservoir pressure, average PVT properties, well production rate and cummulative production). However values of this performance parameters at each simulation time node are exported into a Microsoft Excel spreadsheet created by the script and located in the same directory as the script. The name of the output spreadsheet is as defined (by the user) in the input spreadsheet and imported into string array OutputFileName.
+
+## Reservoir Discretization
+Discretization is the means by which locally-acceptable values of reservoir rock and fluid properties are honored in reservoir modelling. Loosely speaking, reservoir discretization is the division of the reservoirs into grid-blocks whose properties, dimensions and locations are well defined and uniform. Upon discretizing the reservoir into blocks; the flow model would then need be written and solved, repeatedly, for each block.
+
+### Blocks ordering (numbering) schemes
+This is a way to identify each block in a discretized model. There are two types of ordering:
+       
+- Natural ordering (using index n)
+- Engineering ordering (using) indices $i$ and $j$
+    
+**Natural Ordering**
+This uses natural counting scheme. Columns are counted fastest, followed by rows.
+    
+![A discretized reservoir with  naturally ordered blocks](discretized_block_nat_ord.png)    
+   
+**Engineering Ordering**
+This uses i, j notations to order blocks in the x, y, z directions respectively.
+     
++ Index $i$ counts columns along a certain row.
++ Index $j$ counts rows along a certain columns
+   
+![A discretized reservoir with engineering-ordered blocks](discretized_block_eng_ord.png)
+
+## The Fluid Flow Model
+The porous media fluid flow model for the block of interest (Block i,j) is thus:
+   
+   ![A block of interest and its neighbours](block_and_neighbours.png)
+    
+$$T_{y_{(i,j-1),(i,j)}}^{n+1}(P_{i,j-1}^{n+1}-P_{i,j}^{n+1})+T_{x_{(i-1,j),(i,j)}}^{n+1}(P_{i-1,j}^{n+1}-P_{i,j}^{n+1})+T_{x_{(i+1,j),(i,j)}}^{n+1}(P_{i+1,j}^{n+1}-P_{i,j}^{n+1})+T_{y_{(i,j+1),(i,j)}}^{n+1}(P_{i,j+1}^{n+1}-P_{i,j}^{n+1})+q_{sc_{i,j}}^{n+1} = \frac{V_{b_{i.j}}{\phi}c}{{\alpha}_c{\Delta}tB^0}\big[P_{i,j}^{n+1}-P_{i,j}^{n}\big]$$    
+    
+
+The fluid flow model has been rearranged thus:
+   
+$$SP_{i,j-1}^{n+1} + WP_{i-1,j}^{n+1} + CP_{i,j}^{n+1} + EP_{i+1,j}^{n+1}+ NP_{i,j+1}^{n+1} = -GP_{i,j}^{n}-q_{sc_{i,j}}$$   
+   
+S, W, C, E, N and G are coefficients of pressure terms in the model.
+
+$$S = N = T_{y_{(l),(i,j)}}^{n+1}$$
+where $l$ refers to the concerned neighbour (i.e. $i,j-1$ or $i,j+1$)
+    
+    
+$$W = E = T_{x_{(l),(i,j)}}^{n+1}$$          
+where $l$ refers to the concerned neighbour (i.e. $i-1,j$ or $i+1,j$) 
+   
+$$G = \frac{V_{b_{i.j}}{\phi}c}{{\alpha}_c{\Delta}tB^0}$$   
+    
+Depending on the position of the block with respect to the reservoir boundaries (as depicted below), Coefficient C is defined as one of the following expressions:
+    
+![Block categories](block_category.png)    
+   
+Category I blocks: all interior blocks with no interaction with any boundary.
+Such blocks lacks no neighbour; hence, the full set of transmissibilities (4: two $T_x$, two $T_y$) are represented in the coefficient. 
+    
+![Category I blocks](block_cat_I.png)    
+  
+$$C = -\big(2T_{x_{(l),(i,j)}}^{n+1}+2T_{y_{(l),(i,j)}}^{n+1}+\frac{V_{b_{i.j}}{\phi}c}{{\alpha}_c{\Delta}tB^0}\big)$$  
+   
+Category II blocks: all boundary blocks interacting only with either a south or north boundary
+Such blocks lacks neighbouring blocks at the concerned boundary. Since a no-flow boundary is assumed in this script, the concerned transmissibility is zero. Hence, only 3 transmissibilities (two $T_x$, one $T_y$) are represented in the coefficient.
+  
+$$C = -\big(2T_{x_{(l),(i,j)}}^{n+1}+T_{y_{(l),(i,j)}}^{n+1}+\frac{V_{b_{i.j}}{\phi}c}{{\alpha}_c{\Delta}tB^0}\big)$$   
+     
+Category III blocks: all boundary blocks interacting only with either a west or east boundary
+Such blocks lacks neighbouring blocks at the concerned boundary. Since a no-flow boundary is assumed in this script, the concerned transmissibility is zero. Hence, only 3 transmissibilities (one $T_x$, two $T_y$) are represented in the coefficient.
+  
+$$C = -\big(T_{x_{(l),(i,j)}}^{n+1}+2T_{y_{(l),(i,j)}}^{n+1}+\frac{V_{b_{i.j}}{\phi}c}{{\alpha}_c{\Delta}tB^0}\big)$$     
+   
+Category IV blocks: all corner blocks, i.e. boundary blocks interacting with two boundaries (one of east/west and one of north/south)
+Such blocks lacks neighbouring blocks at the concerned boundaries. Since a no-flow boundary is assumed in this script, the concerned transmissibilities are zero. Hence, only 2 transmissibilities (one $T_x$, one $T_y$) are represented in the coefficient.
+  
+$$C = -\big(T_{x_{(l),(i,j)}}^{n+1}+T_{y_{(l),(i,j)}}^{n+1}+\frac{V_{b_{i.j}}{\phi}c}{{\alpha}_c{\Delta}tB^0}\big)$$   
+     
+## The Workflow: how a simulator loops through space and time
+![The Simulation Workflow](simulator_workflow.png)    
+    
+Various simulation variables and loop counters featured in this workflow are defined here:
+     
++ $i$: spatial (block) loop counter
++ $n$: time (cycle) loop counter
++ $t^n$: time value at previous simulation cycle
++ $t^{n+1}$: time value at current simulation cycle
++ $P^n$: pressure value at previous simulation cycle
++ $P^{n+1}$: pressure value at current simulation cycle
++ $N_c$: number of simulation time cycles to be done
++ $N_b$: number of gridblocks in the discretized reservoir model
++ ${\Delta}t$: simulation time-step 
+
+         
+## Loading Reservoir/Well Parameter Data
+The reservoir rock and fluid properties as well as well parameters are the inputs into the reservoir simulation model. In order to use this script, the values of these properties/parameters are to be prepared as a comma-separated values (.csv) spreadheet file format. A template for the data file is available with this script; users must use this template. Below is a snapshot of the *.csv* file.
+  
+![A snapshot of the *.csv* file](snap_csv.png)  
+      
+Furthermore, a number of formatting tasks are here performed on the imported raw data, to make it conformable to the intended workings of this script. The first column of raw data table contains the names (description) and units of the reservoir/well parameters; the second column contains the symbol or abbreviated names of the parameters while their values are in the third column. First, the first column is not needed in the simulation. Also, the second and third columns are tranposed so that the symbols/abbreviations are made column headers while the corresponding values become data entry under this header. Snapshots of both the raw and formatted data table are displayed below.
+   
+![A snapshot of the raw (imported) data](snap_raw.png)   
+  
+   
+![A snapshot of the formatted data](snap_datadeck.png)  
+    
+```{r import_data, echo = TRUE,tidy=TRUE, tidy.opts=list(width.cutoff=60) }
+# reads in the raw data from the .csv file
+datadeck_raw = read.csv("2-D Reservoir Simulator DataDeck Template.csv", header=F, skip = 1, stringsAsFactors = F) 
+
+# [-1] removes first column, t transposes
+datadeck = data.frame(t(datadeck_raw[-1]), stringsAsFactors = F)
+
+# first row of tranposed frame made column headers
+names(datadeck) = as.character(unlist(datadeck[1,])) 
+
+# first row removed
+datadeck = datadeck[-1,] 
+rownames(datadeck) = NULL
+
+# values (hitherto encoded as strings) coerced to numeric type; except the last column
+datadeck[-ncol(datadeck)] = sapply(datadeck[-ncol(datadeck)], as.numeric) 
+```
+
+## Preliminary Computations and Visualization
+Prior to the mainstream simulation loops, the following preliminary computations are implemented in order to discretize the reservoir and to obtain values for various parameters of the fluid flow model. 
+    
+**Discretization: gridblock length in x- and y-direction:** ${\Delta}x$ and ${\Delta}y$ in $ft$
+    
+The entire reservoir spans Length $Lx$ in x-direction. There are $n_x$ blocks in x-direction, altogether spanning $Lx$; so, each block is of Length ${\Delta}x = \frac{L_x}{n_x}$. ${\Delta}y$ is computed in a similar manner. Take note that ${\Delta}x$ and ${\Delta}y$ are lengths for a gridblock; for all gridblocks, these lengths are equal, since the reservoir is uniformly discretized.
+    
+    
+```{r discretization, echo = TRUE}
+delta_x = datadeck$Lx/datadeck$nx
+
+delta_y = datadeck$Ly/datadeck$ny
+```
+ 
+        
+${\Delta}x =$  `r round(delta_x,2)`$ft$
+     
+${\Delta}y =$  `r round(delta_y,2)`$ft$
+ 
+**Visualizing the discretized reservoir model**
+      
+Here is a block-centered discretization of the reservoir model.
+        
+   
+```{r discretized_visualization, echo = TRUE}
+eastings = seq(from = delta_x/2, to = datadeck$Lx-(delta_x/2), by = delta_x)
+northings = seq(from = delta_y/2, to = datadeck$Ly-(delta_y/2), by = delta_y)
+block_centers = expand.grid(eastings = eastings, northings = northings)
+grid_data = cbind(block_centers, nat_ord = 1:(datadeck$nx*datadeck$ny), expand.grid(i = 1:datadeck$nx, j = 1:datadeck$ny))
+grid_data = cbind(grid_data, eng_ord = paste(grid_data$i, ',', grid_data$j, sep = ''))
+library(ggplot2)
+ggplot(data = grid_data, aes(x = eastings, y = northings))+
+  labs(x = "Easting", y = "Northing")+
+  coord_cartesian(xlim = c(0, datadeck$Lx), ylim = c(0, datadeck$Ly))+
+  scale_x_continuous(breaks = seq(0, datadeck$Lx, by = delta_x), expand = c(0, 0))+
+  scale_y_continuous(breaks = seq(0, datadeck$Ly, by = delta_y), expand = c(0, 0))+
+  geom_point(color = "blue") +
+  theme(panel.border = element_blank(),panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_line(colour = "red"))+
+  geom_label(aes(x=eastings, y=northings, label = eng_ord),hjust   = 1.5,vjust   = 1.5, color = "black", fill = "white", label.size = 0)
+
+ggplot(data = grid_data, aes(x = eastings, y = northings))+
+  labs(x = "Easting", y = "Northing")+
+  coord_cartesian(xlim = c(0, datadeck$Lx), ylim = c(0, datadeck$Ly))+
+  scale_x_continuous(breaks = seq(0, datadeck$Lx, by = delta_x), expand = c(0, 0))+
+  scale_y_continuous(breaks = seq(0, datadeck$Ly, by = delta_y), expand = c(0, 0))+
+  geom_point(color = "blue") +
+  theme(panel.border = element_blank(),panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_line(colour = "red"))+
+  geom_label(aes(x=eastings, y=northings, label = nat_ord),hjust   = 1.5,vjust   = 1.5, color = "black", fill = "white", label.size = 0)
+```
+   
+**Gridblock cross-sectional area (perpendicular to flow) in x- and -y direction:** $A_x$ and $A_y$ in $ft^2$
+    
+ $$A_x = {\Delta}y{\times}h; \:\:\:\:\:\:  A_y = {\Delta}x{\times}h$$
+ 
+```{r cs_area, echo = TRUE}
+# cross-sectional area perpendicular to flow in x-direction
+area_x = delta_y*datadeck$h
+
+# cross-sectional area perpendicular to flow in y-direction
+area_y = delta_x*datadeck$h
+```
+    
+$A_x =$  `r round(area_x,2)`$ft^2$
+     
+$A_y =$  `r round(area_y,2)`$ft^2$
+    
+**Gridblock bulk volume:** $V_b$ in $ft^3$ and $bbl$
+   
+  $$V_b = {\Delta}x{\times}{\Delta}y{\times}h$$
+
+
+```{r bulk_volume, echo = TRUE}
+# gridblock bulk volume in cubic feet
+vb = delta_x*delta_y*datadeck$h
+
+# gridblock bulk volume in barrels
+vb_barrel = vb/5.615
+```
+    
+$V_{b_{i,j}} =$  `r round(vb, 4)` $ft^3 =$ `r round(vb_barrel, 4)`$bbl$
+
+    
+**Stock-Tank Oil Initially In Place in the reservoir:** $STOIIP$ in $STB$
+ 
+ $$STOIIP = \frac{L_xL_yh\phi(1-s_{wi})}{5.615B_{oi}}$$
+  
+```{r stoiip, echo = TRUE}
+# Stock-Tank Oil initially in place in the reservoir
+stoiip = (datadeck$Lx*datadeck$Ly*datadeck$h*datadeck$poro*(1 - datadeck$swi))/(5.615* datadeck$Boi)
+```
+   
+ $STOIIP =$  `r round(stoiip, 2)`$STB$`
+ 
+     
+**Stock-Tank Oil initially in place in each block:** $N_i$ in $STB$ 
+
+Again, since the reservoir is uniformly discretized, the gridblocks are of equal dimensions. Also, the gridblocks have same set of values of rock and fluid properties ($\phi$ ,$S_{wi}$ and $B_{oi}$). hence, all gridblocks have same amount of stock-tank oil initially in place.
+    
+$$N_i = \frac{{\Delta}x{\Delta}yh\phi(1-s_{wi})}{5.615B_{oi}}$$    
+
+   
+```{r block_stoiip, echo = TRUE}
+# Stock-Tank Oil initially in place in each block
+Ni = (delta_x*delta_y*datadeck$h*datadeck$poro*(1 - datadeck$swi))/(5.615* datadeck$Boi)
+```   
+
+     
+ $N_i =$  `r round(Ni, 2)`$STB$`     
+     
+**Effective compressibility:** $c_e$ in $psi^{-1}$ 
+  
+The effective compressibility is the measure of total compressibility of the system comprising of the reservoir rock grains, water (connate) and oil with $c_r$, $c_w$ and $c_o$ as their respective compressibilities. The effective compressibility is somewhat a weighted sum of these individual compressibilities. 
+   
+$$c_e = c_r+s_{wi}c_w+(1-s_{wi})c_o$$   
+    
+```{r effective_compressibility, echoe = TRUE}
+#; effective compressibility of the system (rock, oil and water)
+ce = datadeck$cr+(datadeck$swi*datadeck$cw)+((1-datadeck$swi)*datadeck$co)
+```
+
+  
+$c_e =$  `r round(ce, 7)`$psi^{-1}$` 
+
+    
+**Inter-block flow transmissibilities:** $T_x$ and $T_y$ in $STB/psi$
+     
+Again, same set of values of $T_x$ and $T_y$ applies to all pairs of gridblocks.
+   
+$$T_{x_{(l),(i,j)}}^{n+1} = 0.001127\frac{k_xA_x}{{\mu}B{\Delta}x}$$   
+  
+$$T_{y_{(l),(i,j)}}^{n+1} = 0.001127\frac{k_yA_y}{{\mu}B{\Delta}y}$$  
+  
+```{r transmissibilities, echo=TRUE}
+# x-direction transmissibility
+Tx = (0.001127*datadeck$kx*area_x)/(datadeck$visc*datadeck$Boi*delta_x)
+
+# y-direction transmissibility
+Ty = (0.001127*datadeck$ky*area_y)/(datadeck$visc*datadeck$Boi*delta_y)
+```
+    
+$T_{x_{(l),(i,j)}}^{n+1} =$  `r round(Tx,2)`$STB/psi$
+     
+$T_{y_{(l),(i,j)}}^{n+1} =$  `r round(Ty,2)`$STB/psi$
+   
+Recall $S = N = T_{y_{(l),(i,j)}}^{n+1}$ and $W = E = T_{x_{(l),(i,j)}}^{n+1}$
+   
+```{r coefficients_SNEW, echo=TRUE}
+# setting coefficients to transmissibility
+# South coefficient
+S = Ty
+
+# North coefficient
+N = Ty
+
+# East coefficient
+E = Tx
+
+# West coefficient
+W = Tx
+```
+  
+$S =$  `r Ty`$STB/psi$
+   
+$N =$  `r Ty`$STB/psi$
+   
+$E =$  `r Tx`$STB/psi$
+    
+$W =$  `r Tx`$STB/psi$    
+   
+
+## Gridblock Categorization Module
+### The Algorithm
+Recall the $C$ coefficient of the flow equation for a given gridblock  depends on the category to which the gridblock belong, as per the position of the block with respect to the reservoir boundaries.  Hence, before proceeding to generate the flow equation for each gridblock, there is a need to first programatically determine the category to which the gridblock belong. The various categories have been presented earlier, and are listed hereunder for convinence:
+     
++ Category I blocks: all interior blocks with no interaction with any boundary.
++ Category II blocks: all boundary blocks interacting only with either a south or north boundary.
++ Category III blocks: all boundary blocks interacting only with either a west or east boundary.
++ Category IV blocks: all corner blocks, i.e. boundary blocks interacting with two boundaries (one of east/west and one of north/south).
+    
+A sort of algorithm to classify a given gridblock into one of these categories is presented here. This algorithm is based on the engineering gridblock ordering scheme with the $i,j$ notation. Specifically, $i$ index refers to the column (of the discretized rservoir model) to which the gridblock belong while $j$ index refers to the row.
+   
+A nested conditional structure (if...then...elseif) is used in this algorithm and the subsequent scripting in R
+  
+**First condition-** to target the corner blocks (Category IV) 
+  
+That is, Blocks $(1,1)$, $(4,1)$, $(1,3)$ and $(4,3)$ in the visualized discretized model above. 
+   
+The uniqueness of the corner blocks is that **BOTH** their $i$ and $j$ indices are at the end of the range of expected values ($i$ expected to range from $1$ to $n_x$ while $j$ is expected to range $1$ to $n_y$). Now, this uniqueness could be effectively leveraged here to construct a conditional statement that would evaluate to True only for the corner blocks. Take note of the emphasis on "**BOTH**" in the first sentence of this paragraph. In cases when only one of either $i$ or $j$ index is at end of range; that would NOT be a corner block; in fact, that would be either Category II and III.
+   
+Now, how do we determine that an index is at the end of range? Simple! Such an index would have its value equal to $1$ or $n_x$/$n_y$.  
+  
+The following conditional (logical) statements do the job:
+  
++ if $i$ is equal to $1$ AND $j$ is equal to $1$ - that's Block $(1,1)$.
++ if $i$ is equal to $1$ AND $j$ is equal to $n_y$ - that's Block $(1,3)$.
++ if $i$ is equal to $n_x$ AND $j$ is equal to $1$ - that's Block $(4,1)$.
++ if $i$ is equal to $n_x$ AND $j$ is equal to $n_y$ - that's Block $(4,3)$.
+  
+Since a corner block would satisfy just one of these four logical statements, they can all be joined together with the OR logical operator to form a single conditional statement thus:
+   
+$$(i=1\:\:AND\:\:j = 1)\:\:OR\:\:(i=1\:\:AND\:\:j = n_y)\:\:OR\:\:(i=n_x\:\:AND\:\:j = 1)\:\:OR\:\:(i=n_x\:\:AND\:\:j = n_y)$$   
+  
+**Second Condition-** to target all boundary blocks interacting only with either a south or north boundary (Category II) 
+  
+That is, Blocks $(2,1)$, $(3,1)$, $(2,3)$, $(3,3)$ in the visualized discretized model above.
+  
+Again, observe that one of the indices of the blocks targetted under this category is at the end of range; but NOT BOTH indices. Hence, the 'AND' in the logical statements above makes the first condition to be too stringent for this category of block. For this category of blocks, only the $j$ index is at end of range. So, they will escape being 'caught' by the first condition, and get passed to the second condition. This logical statements to be used for the second condition are here written: 
+     
++ if $j$ is equal to $1$
++ if $j$ is equal to $n_y$
+   
+Since a Category II block would satisfy just one of these two logical statements, they can all be joined together with the OR logical operator to form a single conditional statement thus:
+   
+$$(j=1)\:\:OR\:\:(j=n_y)$$
+   
+**Third Condition-** to target all boundary blocks interacting only with either a west or east boundary (Category III) 
+  
+That is, Blocks $(1,2)$, $(4,2)$ in the visualized discretized model above.
+  
+For this category of blocks, only the $i$ index is at end of range. Hence, the 'AND' in the logical statements above makes the first condition to be too stringent for this category of blocks. These blocks will escape being 'caught' by the first condition (and of course, the second contion), and get passed to the third condition. This logical statements to be used for the third condition are here written: 
+     
++ if $i$ is equal to $1$
++ if $i$ is equal to $n_x$
+   
+Since a Category III block would satisfy just one of these two logical statements, they can all be joined together with the OR logical operator to form a single conditional statement thus:
+   
+$$(i=1)\:\:OR\:\:(i=n_x)$$   
+   
+**Fourth Condition-** to target all interior blocks (Category I)
+     
+Yippeee! No condition is neccessary here. Any block that escaped being 'caught' by the first, second and third conditions would neccessarily belong to this category. So, this category corresponds to the last (innermost) 'else' branch of the nested conditional structure (if...then...elseif).
+   
+### The *classify_block* Custom Function
+   
+A custom function is here scripted in R to implement the gridblock categorization algorithm. This function, when created, would then be called from subsequent modules of this script wherever there is a need to classify blocks.
+  
+```{r block_categorization, echo=TRUE}
+classify_block = function(i, j, nx, ny){
+  if((i==1&j==1)|(i==1&j==ny)|(i==nx&j==1)|(i==nx&j==ny)){
+    block_cat = 'IV'
+  } else if((j==1)|(j==ny)){
+    block_cat = 'II'
+  } else if ((i==1)|(i==nx)){
+    block_cat = 'III'
+  } else {
+    block_cat = 'I'
+  }
+  return(block_cat)
+}
+
+# sample calls - to ascertain that the function works
+myblock_cat = classify_block(1,1,4,3) #for Block 1,1; Category IV expected
+print(paste('Block 1,1 is a Category',myblock_cat,'block', sep = ' '))
+
+myblock_cat = classify_block(2,1,4,3) #for Block 2,1; Category II expected
+print(paste('Block 2,1 is a Category',myblock_cat,'block', sep = ' '))
+
+myblock_cat = classify_block(4,2,4,3) #for Block 4,2; Category III expected
+print(paste('Block 4,2 is a Category',myblock_cat,'block', sep = ' '))
+
+myblock_cat = classify_block(3,2,4,3) #for Block 3,2; Category I expected
+print(paste('Block 3,2 is a Category',myblock_cat,'block', sep = ' '))
+```
+  
+## Gridblock-level Modelling
+Essentially, the left-hand side (LHS) of the fluid flow equation is simply a sum of pressure terms corresponding to pressure of the block ofinterest and the pressures of as many neighbors as are associated to the block of interest. Each pressure term consists of a pressure variable ($P_{i,j-1}$, ($P_{i-1,j}$, $P_{i,j}$, ($P_{i+1,j}$, or ($P_{i,j+1}$) and their associated coefficients ($S$,$W$,$C$,$E$ or $N$), respectively. In order to construct the LHS of the flow equations for a given gridblock of interest, it is neccessary to know the following:
+     
++ $i$ and $j$ indices of the block of interest
+ - leading to the category to which the block of interest belong
+   * leading to the available neighbors
+     + leading to the pressure variables that would feature in the flow equation of the block of interest
+       - pressure variables corresponding to unavailable neighbors would NOT feature,
+     + leading to the Coefficients (S,N,E,W) that would feature in the flow equation of the block of interest
+   * leading to the value to be taken by Coefficient C.
+   
+Once all of these are known, the flow equation can be pieced together.
+  
+We now present algorithms which these items may be determined.
+   
+First, the whole routine would be done per block, using the 'for' loop struture in R; specifically, a two-level nested 'for' loops. With these loops, the simulator 'walks' (iterates/cycles) through each of the blocks in the discretized model. The outermost loop cycles through the rows - from one row to the other, counting its step with counter $j$. At each row reached by the outermost loop (named j-loop or row-loop), the innermost loop (i-loop or column-loop) takes over and cycles through the gridblocks in the columns of that row, counting its step with counter $i$. So, there would be $n_y$ iterations/cycles for the j-loop. For one iteration of the j-loop, there would be $n_x$ iterations of the i-loop. This implies that the innermost i-loop runs fastest. Altogether, there would be $n_x{\times}n_y$ iterations for the i-loop.
+   
+### Indices of the block of interest
+   
+The choice of notations $j$ and $i$ as the loop row- and column-counters in the loop is delibrate. Since the j-loop iterates through rows, its conuter, $j$, must neccessarily be counting row; just as the $i$ counter must be counting columns. This loop counter notation choice aligns well (in motation and in essence) with the row and column indices used in engineering ordering of gridbloks in the discretized reservoir model. Hence, at any point in the nested-loop iterarions, the values being held by the  i-counter and the j-counter correspond to the $i$ and $j$ indices of the block of interest - the block currently reached in the iterations.
+  
+Example, if the outermost loop had iterated twice, then $j$ would be 2. If for that second iteration of the  outermost loop, the innermost loop had iterated 4 times, then, $i$ would be 4. Of course, the fourth iteration of the innermost loop for the second iteration of the outermost loop must have landed on Block 4,2.
+   
+   
+    
+### Category of the block of interest 
+With the $i$ and $j$ indices of the block of interest known, the block category can be detrmined with a call to the custom-built function classify_block; passing the $i$ and $j$ values as arguments to the function.
+
+### Neighbors of the block of interest: The Algorithm
+   
+A block of interest with $i$ and $j$ indices may have neighbouring blocks at the following locations:
+   
++ South Neighbour at $i$,$j-1$
++ West Neighbour at $i-1$,$j$
++ East Neighbour at $i+1$,$j$
++ North Neighbour at $i$,$j+1$
+   
+However, only interioir blocks (Category I blocks) would have this full set of neighbours. Boundary blocks (Category II, III and IV) would lack neighbour(s) in some directions. Clearly, we need to rely on the categorization of blocks in order to programatically decide on the appropriate number and locations of neighbours for a given block. Again, a nested *if...then...elseif* structure would be used to work out this scheme. Below is the algorithm of this scheme.
+
+Given the $i$ and $j$ indices of a block of interest, depending on the catgeory to which the block belong, the indices of its associated neighbours are presented below as lists of 2-tuple (pairs) vectors. Lacked neighbours would be denoted as an empty vector (NULL). These lists of vectors would be coded in R using the list() function.     
+     
+**Category I blocks:** Interior blocks
+  
+$$sou = [i,j-1]\:\:\:\:\:wes=[i-1,j]\:\:\:\:\:eas = [i+1,j]\:\:\:\:\:nor = [i,j+1]$$
+     
+**Category II blocks:** Blocks interacting with only South or North boundary
+If $j = 1$, then block interact with South Boundary, so it lacks South neighbour;
+    
+$$wes=[i-1,j]\:\:\:\:\:eas = [i+1,j]\:\:\:\:\:nor = [i,j+1]$$  
+  
+else, if $j = n_y$, block interacts with North Boundary, so it lacks North neighbour 
+   
+$$sou = [i,j-1]\:\:\:\:\:wes=[i-1,j]\:\:\:\:\:eas = [i+1,j]$$   
+   
+**Category III blocks:** Blocks interacting with only West or East boundary
+If $i = 1$, then block interact with West Boundary, so it lacks West neighbour;
+    
+$$sou = [i,j-1]\:\:\:\:\:eas = [i+1,j]\:\:\:\:\:nor = [i,j+1]$$
+  
+else, if $i = n_x$, block interacts with East Boundary, so it lacks East neighbour 
+   
+$$sou = [i,j-1]\:\:\:\:\:wes=[i-1,j]\:\:\:\:\:nor = [i,j+1]$$
+     
+**Category IV Blocks:** Corner Blocks
+  
+If $(i=1\:\:AND\:\:j = 1)$, that's Block at bottom left corner; it interacts with South and West Boundaries, so, it lacks South and West neighbours;
+   
+$$eas = [i+1,j]\:\:\:\:\:nor = [i,j+1]$$  
+  
+else,  If $(i=1\:\:AND\:\:j = n_y)$, that's Block at top left corner; it interacts with North and West Boundaries, so, it lacks North and West neighbours;
+   
+$$sou = [i,j-1]\:\:\:\:\:eas = [i+1,j]$$  
+  
+else, If $(i=n_x\:\:AND\:\:j = 1)$, that's Block at bottom right corner; it interacts with South and East Boundaries, so, it lacks South and East neighbours;
+   
+$$wes=[i-1,j]\:\:\:\:\:nor = [i,j+1]$$
+   
+else, if $(i=n_x\:\:AND\:\:j = n_y)$, that's Block at top right corner; it interacts with North and East Boundaries, so, it lacks North and East neighbours;
+   
+$$sou = [i,j-1]\:\:\:\:\:wes=[i-1,j]$$
+   
+### Neighbors of the block of interest: The *neighbour_list* Custom Function       
+A custom function is here scripted in R to generate the list of indices of blocks that are neihgbours to the block of interest. These indices would serve as subcripts to $P$ to form the pressure variables in the flow equations. This function, when created, would then be called from the gridblock flow equation module.
+      
+```{r neighbour_list, echo=TRUE}
+neighbour_list = function(i,j){
+  # First, call Function classify_block to categorize the block ofinterest
+  block_category = classify_block(i = i, j = j, nx = datadeck$nx, ny = datadeck$ny)
+  
+  # Then, based on the block's category, generate the indices of the set of neighbours
+  if (block_category == 'I'){    # Has full (4) set of neighbours 
+    neighbour_list = list(
+      "sou" = c(i, j-1),
+      "wes" = c(i-1, j),
+      "eas" = c(i+1, j),
+      "nor" = c(i, j+1)
+    )
+  } else if (block_category == 'II'){
+    if (j == 1){     # Lacks the South neighbour   
+      neighbour_list = list(
+         "wes" = c(i-1, j),
+         "eas" = c(i+1, j),
+         "nor" = c(i, j+1)
+      )
+    } else {   # j = ny; Lacks the North neighbour 
+        neighbour_list = list(
+          "sou" = c(i, j-1),
+          "wes" = c(i-1, j),
+          "eas" = c(i+1, j)
+        )
+      }  
+  } else if (block_category == 'III'){
+    if (i == 1){     # Lacks the West neighbour   
+      neighbour_list = list(
+        "sou" = c(i, j-1),
+        "eas" = c(i+1, j),
+        "nor" = c(i, j+1)
+      )
+    } else {   # i = nx; Lacks the East neighbour 
+        neighbour_list = list(
+          "sou" = c(i, j-1),
+          "wes" = c(i-1, j),
+          "nor" = c(i, j+1)
+        )
+      }  
+  } else {
+    if (i == 1 & j == 1){     # Bottom-left; lacks the South & West neighbours   
+      neighbour_list = list(
+        "eas" = c(i+1, j),
+        "nor" = c(i, j+1)
+      )
+    } else if (i == 1 & j == datadeck$ny){      # Top-left; lacks the North and West neighbours
+        neighbour_list = list(
+          "sou" = c(i, j-1),
+          "eas" = c(i+1, j)
+        )
+    } else if (i == datadeck$nx & j == 1){    # Bottom-right; lacks the South and East neighbours
+        neighbour_list = list(
+          "wes" = c(i-1, j),
+          "nor" = c(i, j+1)
+        )
+    } else {       # Top-right (i=nx, j=ny); lacks the North and East neighbours    
+        neighbour_list = list(
+          "sou" = c(i, j-1),
+          "wes" = c(i-1, j)
+        )
+      } 
+  }
+  return(neighbour_list)
+}
+
+# Sample calls
+neighbour_list(1,1) # nor = (1,2), eas = (2,1) expected
+neighbour_list(3,2) # sou = (3,1), wes = (2,2), eas = (4,2), nor = (3,3) expected
+```
+   
+
+### Fluid Flow Equation per Gridblock
+    
+```{r flow_equation, echo=TRUE}
+write_equation = function(i,j){
+  blockij_cat = classify_block(i = i, j = j, nx = datadeck$nx, ny = datadeck$ny)
+    
+    # Compute G = (vb*poro*c)/(5.615*delta_t*boi) to avoid clumsiness in repitition
+    G = (vb*datadeck$poro*ce)/(5.615*datadeck$delta_t*datadeck$Bob)
+    
+    # Computing C based on the category of Block i,j 
+    if (blockij_cat == 'I'){     # Full set of 4 transmissibility terms
+      C = -(2*Tx + 2*Ty + G)
+    } else if (blockij_cat == 'II'){     # Lacking 1 Ty transmissibility term
+      C = -(2*Tx + Ty + G) 
+    } else if (blockij_cat == 'III'){     # Lacking 1 Tx transmissibility term
+      C = -(Tx + 2*Ty + G)
+    } else {        # Category IV; lacking 1 Tx and 1 Ty transmissibility terms
+      C = -(Tx + Ty + G)
+    }
+    
+    # Write the center term being CP_{i,j}
+    center_term = paste(C,)
+    
+    # Generate list of neighbours of block i,j; using neighbour_list custom function
+    blockij_neighbours = neighbour_list(i = i, j = j)
+    
+    # Assign  applicable Coefficients (S, W, E, N) to relevant columns of
+    # of the matrix, as per the indices of available neighbours in blockij_neighbours.
+    
+    if ('sou' %in% names(blockij_neighbours)){        # Checks if South neighbour is present
+      # Determine the natural order of the South neighbour
+      south_natord = ((blockij_neighbours$sou[2]-1)*datadeck$nx) + blockij_neighbours$sou[1]
+      
+      # Assign Coefficient S to the south_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, south_natord] = S
+    }
+    
+    if ('wes' %in% names(blockij_neighbours)){        # Checks if West neighbour is present
+      # Determine the natural order of the West neighbour
+      west_natord = ((blockij_neighbours$wes[2]-1)*datadeck$nx) + blockij_neighbours$wes[1]
+      
+      # Assign Coefficient W to the west_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, west_natord] = W
+    }
+    
+    if ('eas' %in% names(blockij_neighbours)){        # Checks if East neighbour is present
+      # Determine the natural order of the East neighbour
+      east_natord = ((blockij_neighbours$eas[2]-1)*datadeck$nx) + blockij_neighbours$eas[1]
+      
+      # Assign Coefficient E to the east_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, east_natord] = E
+    }
+    
+    if ('nor' %in% names(blockij_neighbours)){        # Checks if North neighbour is present
+      # Determine the natural order of the North neighbour
+      north_natord = ((blockij_neighbours$nor[2]-1)*datadeck$nx) + blockij_neighbours$nor[1]
+      
+      # Assign Coefficient N to the north_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, north_natord] = N
+    }
+}
+```
+    
+
+### The Left-hand-side Coefficient Matrix
+    
+```{r coeff_matrix, echo = TRUE}
+# Pre-allocate the coefficient matrix with zeros
+coeff_matrix = matrix(rep(0, (datadeck$nx*datadeck$ny)^2), ncol = datadeck$nx*datadeck$ny, nrow = datadeck$nx*datadeck$ny)
+
+for (j in 1:datadeck$ny){
+  for (i in 1:datadeck$nx){
+    # Determine block i,j category;using block_classify custom function
+    blockij_cat = classify_block(i = i, j = j, nx = datadeck$nx, ny = datadeck$ny)
+    
+    # Determine block i,j natural order
+    blockij_natord = ((j-1)*datadeck$nx) + i
+    
+    # Compute G = (vb*poro*c)/(5.615*delta_t*boi) to avoid clumsiness in repitition
+    G = (vb*datadeck$poro*ce)/(5.615*datadeck$delta_t*datadeck$Bob)
+    
+    # Computing C based on the category of Block i,j 
+    if (blockij_cat == 'I'){     # Full set of 4 transmissibility terms
+      C = -(2*Tx + 2*Ty + G)
+    } else if (blockij_cat == 'II'){     # Lacking 1 Ty transmissibility term
+      C = -(2*Tx + Ty + G) 
+    } else if (blockij_cat == 'III'){     # Lacking 1 Tx transmissibility term
+      C = -(Tx + 2*Ty + G)
+    } else {        # Category IV; lacking 1 Tx and 1 Ty transmissibility terms
+      C = -(Tx + Ty + G)
+    }
+    
+    # Assign C to the main diagonal of the matrix
+    # Use blockij_natord as the row and column indices of the matrix
+    coeff_matrix[blockij_natord, blockij_natord] = C
+    
+    # Generate list of neighbours of block i,j; using neighbour_list custom function
+    blockij_neighbours = neighbour_list(i = i, j = j)
+    
+    # Assign  applicable Coefficients (S, W, E, N) to relevant columns of
+    # of the matrix, as per the indices of available neighbours in blockij_neighbours.
+    
+    if ('sou' %in% names(blockij_neighbours)){        # Checks if South neighbour is present
+      # Determine the natural order of the South neighbour
+      south_natord = ((blockij_neighbours$sou[2]-1)*datadeck$nx) + blockij_neighbours$sou[1]
+      
+      # Assign Coefficient S to the south_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, south_natord] = S
+    }
+    
+    if ('wes' %in% names(blockij_neighbours)){        # Checks if West neighbour is present
+      # Determine the natural order of the West neighbour
+      west_natord = ((blockij_neighbours$wes[2]-1)*datadeck$nx) + blockij_neighbours$wes[1]
+      
+      # Assign Coefficient W to the west_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, west_natord] = W
+    }
+    
+    if ('eas' %in% names(blockij_neighbours)){        # Checks if East neighbour is present
+      # Determine the natural order of the East neighbour
+      east_natord = ((blockij_neighbours$eas[2]-1)*datadeck$nx) + blockij_neighbours$eas[1]
+      
+      # Assign Coefficient E to the east_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, east_natord] = E
+    }
+    
+    if ('nor' %in% names(blockij_neighbours)){        # Checks if North neighbour is present
+      # Determine the natural order of the North neighbour
+      north_natord = ((blockij_neighbours$nor[2]-1)*datadeck$nx) + blockij_neighbours$nor[1]
+      
+      # Assign Coefficient N to the north_natord-th column of the blockij_natord-th row of the matrix. 
+      coeff_matrix[blockij_natord, north_natord] = N
+    }
+  }
+}
+print(round(coeff_matrix,1))
+```
+
+      
+```{r}
+values <- sample(10:100, sample(3:5))/10
+lv <- length(values)
+avg <- sum(values)/lv
+```
+ 
+\begin{center}
+The average of $values$ is 
+$\hat{v} = \frac{`r paste(values, collapse="+")`}{`r lv`} = `r round(avg, 3)`$.
+\end{center}
+
+
+    
+$$P_{`r area_x`}$$
+   
+```{r}
+expression(paste("6"^"t", "ep"))
+```
+
+   
+```{r pressure,fig.width=6,echo=FALSE,message=FALSE,results="asis"}
+
+attach(airquality)
+for(i in unique(Month)) {
+  cat("  \n###",  month.name[i], "Air""[Quaility]  \n")
+  #print(plot(airquality[airquality$Month == i,]))
+  plot(airquality[airquality$Month == i,])
+  cat("  \n")
+}
+```
+
+
+```{r depicting_press_disturb}
+# reads in the raw data from the .csv file
+block_pressures = read.csv("Block Pressures.csv", header=TRUE)
+
+# function to generate visual matrix:
+#library(corrplot)
+library(ggplot2)
+vis_matrix = function(press_vals){
+  press_frame = data.frame(expand.grid(i = 1:19, j = 1:19), p = press_vals)
+  press_map = ggplot(data = press_frame, aes(i, j)) +
+  geom_tile(aes(fill = press_vals), color = "white") +
+  scale_fill_gradient(low = "white", high= "red", name = "Pressure")
+  print(press_map)
+}
+
+# Apply the function
+sapply(block_pressures, vis_matrix)
+
+```
+
+jjj   
